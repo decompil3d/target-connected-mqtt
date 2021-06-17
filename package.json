@@ -1,0 +1,32 @@
+{
+  "name": "target-connected-mqtt",
+  "version": "1.0.0",
+  "description": "Node.js app to expose Bluetooth LE Target Connected table lamps via MQTT",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/decompil3d/target-connected-mqtt.git"
+  },
+  "keywords": [
+    "target",
+    "connected",
+    "bluetooth",
+    "ble",
+    "mqtt",
+    "homeassistant"
+  ],
+  "author": "Jonathan Keslin <github@jonathankeslin.com>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/decompil3d/target-connected-mqtt/issues"
+  },
+  "homepage": "https://github.com/decompil3d/target-connected-mqtt#readme",
+  "dependencies": {
+    "@abandonware/noble": "^1.9.2-14",
+    "mutexify": "^1.3.1"
+  },
+  "devDependencies": {}
+}
