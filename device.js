@@ -16,7 +16,7 @@ const CharacteristicIds = {
   on: '00a268345cf448e5ae1c9e1234c03e00',
   brightness: 'bbe8badce1cb46c69ad9631ea7cba2bb',
   temperature: 'cce8badce1cb46c69ad9631ea7cba2cc'
-}
+};
 
 /**
  * @typedef {Object} CharacteristicInfo
@@ -48,7 +48,6 @@ const Characteristics = {
 /**
  * @typedef {import('@abandonware/noble').Characteristic} Characteristic
  * @typedef {import('@abandonware/noble').Peripheral} Peripheral
- * @typedef {{ (): Promise<any>, locked: Readonly<boolean> }} Lock
  */
 /**
  * @typedef {Object} State
@@ -56,16 +55,24 @@ const Characteristics = {
  * @prop {number} brightness The brightness of the light
  * @prop {number} temperature The color temperature of the light
  */
+/**
+ * @typedef {(T) => void} SubscribedCallback
+ * @template T Type of value
+ */
+/**
+ * @typedef {Object} Subscriptions
+ * @prop {SubscribedCallback<boolean>[]} on Callback(s) to call when the on/off state changes
+ * @prop {SubscribedCallback<number>[]} brightness Callback(s) to call when the brightness state changes
+ * @prop {SubscribedCallback<number>[]} temperature Callback(s) to call when the color temperature state changes
+ */
 
 module.exports = class Device {
   /**
    * Constructor
    * @param {Peripheral} peripheral Noble Peripheral object for device
-   * @param {Lock} connectLock Lock mutex for connection
    */
-  constructor(peripheral, connectLock) {
+  constructor(peripheral) {
     this.peripheral = peripheral;
-    this.connectLock = connectLock;
     /** @type {State} */
     this.state = {
       on: null,
@@ -73,6 +80,12 @@ module.exports = class Device {
       temperature: null
     };
     this.requestedDisconnect = false;
+    /** @type {Subscriptions} */
+    this.subscriptions = {
+      on: [],
+      brightness: [],
+      temperature: []
+    };
   }
 
   /**
@@ -91,7 +104,7 @@ module.exports = class Device {
    * @private
    */
   async connect() {
-    const release = await this.connectLock();
+    if (this.peripheral.state === 'connected') return;
 
     this.peripheral.once('connect', err => {
       if (err) {
@@ -117,8 +130,6 @@ module.exports = class Device {
         console.log('Disconnected from', this.peripheral.id);
       }
 
-      release();
-
       if (this.requestedDisconnect) {
         this.requestedDisconnect = false;
       } else {
@@ -131,7 +142,11 @@ module.exports = class Device {
 
     // Connection can be slow and cause issues if we don't wait a bit after the connectAsync method resolves
     // see https://github.com/abandonware/noble/issues/62
-    return wait(1000);
+    await wait(1000);
+
+    this.characteristics = await this.discoverCharacteristics();
+
+    return this.subscribeToCharacteristics();
   }
 
   /**
@@ -142,27 +157,63 @@ module.exports = class Device {
    */
   async disconnect() {
     this.requestedDisconnect = true;
+    this.characteristics = null;
     return this.peripheral.disconnectAsync();
   }
 
   /**
+   * Subscribe to peripheral state updates
+   *
+   * @private
+   */
+  async subscribeToCharacteristics() {
+    for (const ci of Object.values(Characteristics)) {
+      /** @type {Characteristic} */
+      const ch = this.characteristics[ci.name];
+      ch.on('data', /** @param {Buffer} data Data sent */ data => {
+        // Read data
+        /** @type {number|boolean} */
+        let val = data.readUInt8();
+        if (ci.isBool) val = val === 1;
+
+        // Save into state
+        this.state[ci.name] = val;
+
+        // Notify subscribers
+        this.subscriptions[ci.name].forEach(cb => cb(val));
+      });
+
+      await ch.notifyAsync(true);
+    }
+  }
+
+  async subscribe(characteristicName, cb) {
+    if (!(characteristicName in this.subscriptions)) {
+      throw new Error('Invalid subscription characteristic name');
+    }
+    this.subscriptions[characteristicName].push(cb);
+  }
+
+  /**
+   * @typedef {() => Promise<T>} Operation
+   * @template T
+   */
+  /**
    * Attempt to run an operation with automatic retry if an unexpected disconnection occurs
    *
-   * @param {() => Promise<T>} op Operation to run
+   * @param {Operation<T>} op Operation to run
    * @returns {Promise<T>} Result of the operation
    * @template T type of operation return value
    * @private
    */
   async runOperation(op) {
-    this.op = () => new Promise(async (res, rej) => {
-      try {
-        await op();
-      } catch (err) {
-        rej(err);
-        return;
-      }
-      this.op = null;
-      res();
+    this.op = () => new Promise((res, rej) => {
+      op()
+        .then(() => {
+          this.op = null;
+          res();
+        })
+        .catch(rej);
     });
     this.op.retriesRemaining = 5;
 
@@ -180,9 +231,41 @@ module.exports = class Device {
       await this.runOperation(async () => this.updateState());
     } catch (err) {
       console.error(err);
-    } finally {
-      await this.disconnect();
     }
+  }
+
+  /**
+   * @typedef {Object} CharacteristicsSet
+   * @prop {Characteristic} on Characteristic tracking on/off state
+   * @prop {Characteristic} brightness Characteristic tracking brightness state
+   * @prop {Characteristic} temperature Characteristic tracking color temperature state
+   */
+  /**
+   * Discover characteristics of a peripheral
+   *
+   * @returns {Promise<CharacteristicsSet>} Set of Characteristic objects loaded from the device
+   * @private
+   */
+  async discoverCharacteristics() {
+    const res = await this.peripheral.discoverSomeServicesAndCharacteristicsAsync([
+      Services.light
+    ], [
+      CharacteristicIds.on,
+      CharacteristicIds.brightness,
+      CharacteristicIds.temperature
+    ]);
+
+    const ret = {};
+    for (const c of res.characteristics) {
+      if (c.uuid === CharacteristicIds.on)
+        ret.on = c;
+      else if (c.uuid === CharacteristicIds.brightness)
+        ret.brightness = c;
+      else if (c.uuid === CharacteristicIds.temperature)
+        ret.temperature = c;
+    }
+
+    return ret;
   }
 
   /**
@@ -193,22 +276,9 @@ module.exports = class Device {
   async updateState() {
     this.name = this.peripheral.advertisement.localName;
     console.log(`Updating state for '${this.name}' (ID: ${this.peripheral.id})`);
-    const res = await this.peripheral.discoverSomeServicesAndCharacteristicsAsync([
-      Services.light
-    ], [
-      CharacteristicIds.on,
-      CharacteristicIds.brightness,
-      CharacteristicIds.temperature
-    ]);
-
-    for (const c of res.characteristics) {
-      if (c.uuid === CharacteristicIds.on)
-        await this.updateCharacteristicState(c, 'on', true);
-      else if (c.uuid === CharacteristicIds.brightness)
-        await this.updateCharacteristicState(c, 'brightness');
-      else if (c.uuid === CharacteristicIds.temperature)
-        await this.updateCharacteristicState(c, 'temperature');
-    }
+    await this.updateCharacteristicState(this.characteristics.on, 'on', true);
+    await this.updateCharacteristicState(this.characteristics.brightness, 'brightness');
+    await this.updateCharacteristicState(this.characteristics.temperature, 'temperature');
     console.log(`Finished updating state for '${this.name}' (ID: ${this.peripheral.id})`);
   }
 
@@ -240,17 +310,13 @@ module.exports = class Device {
     await this.connect();
     try {
       await this.runOperation(async () => {
-        const { characteristics: [ ch ] } = await this.peripheral.discoverSomeServicesAndCharacteristicsAsync(
-          [Services.light], [characteristicInfo.id]);
-        console.log('start write');
+        const ch = this.characteristics[characteristicInfo.name];
         await ch.writeAsync(value, withoutResponse);
         console.log('finished write, update state');
         await this.updateCharacteristicState(ch, characteristicInfo.name, characteristicInfo.isBool);
       });
     } catch (err) {
       console.error(err);
-    } finally {
-      await this.disconnect();
     }
   }
 

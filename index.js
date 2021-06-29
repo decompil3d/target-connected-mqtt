@@ -1,4 +1,3 @@
-const mutexify = require('mutexify/promise');
 const noble = require('@abandonware/noble');
 const config = require('./config');
 const Device = require('./device');
@@ -10,7 +9,7 @@ noble.on('stateChange', async (state) => {
   }
 });
 
-const devices = [];
+const peripherals = [];
 const notYetFound = config?.ids?.slice();
 if (!notYetFound) {
   console.log('config.ids is not set, so will output device IDs as they are found. Ctrl+C when you are satisfied');
@@ -21,14 +20,14 @@ noble.on('discover', async (peripheral) => {
     if (found > -1) {
       // Found one of the devices we're looking for
       console.log(`Found known device (ID: ${peripheral.id})`);
-      devices.push(peripheral);
+      peripherals.push(peripheral);
       notYetFound.splice(found, 1);
       if (notYetFound.length === 0) {
         // Found all devices we were looking for, so stop scanning
         console.log('Found all known devices');
         await noble.stopScanningAsync();
         console.log('Stopped scanning');
-        await manageDevices(devices);
+        await manageDevices(peripherals);
       }
     }
   } else {
@@ -43,9 +42,6 @@ noble.on('discover', async (peripheral) => {
  * @param {noble.Peripheral[]} devicePeripherals Peripheral objects for each device
  */
 async function manageDevices(devicePeripherals) {
-  const connectLock = mutexify();
-  const devices = devicePeripherals.map(dp => new Device(dp, connectLock));
-  for (const d of devices) {
-    await d.init();
-  }
+  const devices = devicePeripherals.map(dp => new Device(dp));
+  await Promise.all(devices.map(d => d.init()));
 }
