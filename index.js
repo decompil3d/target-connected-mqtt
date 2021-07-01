@@ -1,6 +1,11 @@
+const Graceful = require('node-graceful').default;
+Graceful.captureExceptions = true;
+Graceful.captureRejections = true;
+Graceful.exitOnDouble = false;
 const noble = require('@abandonware/noble');
 const config = require('./config');
 const Device = require('./device');
+const MQTTManager = require('./mqtt');
 
 noble.on('stateChange', async (state) => {
   if (state === 'poweredOn') {
@@ -42,6 +47,32 @@ noble.on('discover', async (peripheral) => {
  * @param {noble.Peripheral[]} devicePeripherals Peripheral objects for each device
  */
 async function manageDevices(devicePeripherals) {
+  Graceful.on('exit', (signal, details) => {
+    if (details) {
+      console.error('Exit reason:', details);
+    }
+  });
+
   const devices = devicePeripherals.map(dp => new Device(dp));
-  await Promise.all(devices.map(d => d.init()));
+
+  Graceful.on('exit', async function () {
+    console.log('Disconnecting Bluetooth LE connections before exit');
+    await Promise.all(devices.map(d => d.disconnect()));
+    console.log('Finished disconnecting Bluetooth LE');
+  });
+
+  // Initialize devices serially to avoid running too many BLE commands at once
+  for (const device of devices) {
+    await device.init();
+  }
+
+  const mqtt = new MQTTManager(devices);
+
+  Graceful.on('exit', async function () {
+    console.log('Disconnecting from MQTT broker before exit');
+    await mqtt.disconnect();
+    console.log('Finished disconnecting from MQTT broker');
+  });
+
+  await mqtt.init();
 }

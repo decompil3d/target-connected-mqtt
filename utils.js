@@ -1,4 +1,4 @@
-/***
+/**
  * Convert a color temperature expressed in percent to mireds
  * 1 = 2700K = ~370 mireds
  * 100 = 5000K = 200 mireds
@@ -12,7 +12,7 @@ function tempPercentToMireds(temperaturePercent) {
   return Math.round(1e6 / kelvins);
 }
 
-/***
+/**
  * Convert a color temperature expressed in mireds to percent
  * 1 = 2700K = ~370 mireds
  * 100 = 5000K = 200 mireds
@@ -23,10 +23,12 @@ function tempPercentToMireds(temperaturePercent) {
  */
 function miredsToTempPercent(mireds) {
   const kelvins = 1e6 / mireds;
-  return Math.ceil((kelvins - 2700) / 2300);
+  return Math.ceil(((kelvins - 2700) / 2300) * 100);
 }
 
 module.exports = {
   tempPercentToMireds,
-  miredsToTempPercent
+  miredsToTempPercent,
+  MIN_MIREDS: 200,
+  MAX_MIREDS: 370
 };

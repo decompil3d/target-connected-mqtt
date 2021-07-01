@@ -26,9 +26,14 @@
   "homepage": "https://github.com/decompil3d/target-connected-mqtt#readme",
   "dependencies": {
     "@abandonware/noble": "^1.9.2-14",
-    "async-mqtt": "^2.6.1"
+    "async-mqtt": "^2.6.1",
+    "mem": "^8.1.1",
+    "node-graceful": "^3.0.1"
   },
   "devDependencies": {
+    "@babel/core": "^7.14.6",
+    "@babel/eslint-parser": "^7.14.7",
+    "@babel/preset-env": "^7.14.7",
     "eslint": "^7.29.0",
     "eslint-config-godaddy": "^5.0.0",
     "eslint-plugin-json": "^3.0.0",
