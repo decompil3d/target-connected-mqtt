@@ -229,7 +229,9 @@ module.exports = class MQTTManager {
         name: device.device.name,
         stat_t: device.topics.on,
         uniq_id: 'target-connected-' + device.device.id
-      }));
+      }), {
+        retain: true
+      });
     }
   }
 };
