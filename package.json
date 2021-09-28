@@ -28,7 +28,8 @@
     "@abandonware/noble": "^1.9.2-14",
     "async-mqtt": "^2.6.1",
     "mem": "^8.1.1",
-    "node-graceful": "^3.0.1"
+    "node-graceful": "^3.0.1",
+    "p-retry": "^4.6.1"
   },
   "devDependencies": {
     "@babel/core": "^7.14.6",

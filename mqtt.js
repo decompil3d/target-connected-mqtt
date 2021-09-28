@@ -1,5 +1,6 @@
 const MQTT = require('async-mqtt');
 const mem = require('mem');
+const pRetry = require('p-retry');
 const { mqtt: mqttConfig } = require('./config');
 const { tempPercentToMireds, miredsToTempPercent, MAX_MIREDS, MIN_MIREDS } = require('./utils');
 
@@ -59,9 +60,15 @@ module.exports = class MQTTManager {
    */
   async init() {
     console.log('Connecting to MQTT broker...');
-    this.#mqtt = await MQTT.connectAsync(mqttConfig.brokerUrl, {
-      username: mqttConfig.username,
-      password: mqttConfig.password
+    this.#mqtt = await pRetry(async () => {
+      return await MQTT.connectAsync(mqttConfig.brokerUrl, {
+        username: mqttConfig.username,
+        password: mqttConfig.password
+      });
+    }, {
+      onFailedAttempt: error => {
+        console.log(`Attempt ${error.attemptNumber} failed. There are ${error.retriesLeft} retries left.`);
+      }
     });
     console.log('Connected to MQTT broker');
 
