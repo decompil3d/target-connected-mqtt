@@ -35,9 +35,9 @@
     "@babel/core": "^7.14.6",
     "@babel/eslint-parser": "^7.14.7",
     "@babel/preset-env": "^7.14.7",
-    "eslint": "^7.29.0",
-    "eslint-config-godaddy": "^5.0.0",
+    "eslint": "^8.46.0",
+    "eslint-config-godaddy": "^7.0.2",
     "eslint-plugin-json": "^3.0.0",
-    "eslint-plugin-mocha": "^9.0.0"
+    "eslint-plugin-mocha": "^10.1.0"
   }
 }

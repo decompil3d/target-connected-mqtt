@@ -95,7 +95,6 @@ module.exports = class MQTTManager {
    *
    * @param {Device} device Device instance
    * @returns {Topics} Topic IDs
-   * @private
    */
   #buildTopicIds(device) {
     const base = `target_connected/${device.id}/`;
@@ -134,7 +133,6 @@ module.exports = class MQTTManager {
    *
    * @param {DeviceInfo} device Device to set up subscriptions for
    * @returns {Promise<void>} Completion
-   * @private
    */
   async #subscribeToCommandsForDevice(device) {
     console.log('Subscribing to command topics for', device.device.name);
@@ -164,7 +162,6 @@ module.exports = class MQTTManager {
    * Subscribe to device characteristic change notifications and plumb to MQTT
    *
    * @param {DeviceInfo} device Device to subscribe to
-   * @private
    */
   #subscribeToDeviceNotifications(device) {
     console.log('Subscribing to characteristic notifications for', device.device.name);
@@ -190,26 +187,26 @@ module.exports = class MQTTManager {
    *
    * @param {DeviceInfo} device Device to publish statuses for
    * @returns {Promise<void>} Completion
-   * @private
    */
   async #publishDeviceStatuses(device) {
     console.log('Publishing latest statuses for', device.device.name);
     await this.#mqtt.publish(device.topics.on, device.device.on ? 'ON' : 'OFF', {
       retain: true
     });
-    await this.#mqtt.publish(device.topics.brightness, device.device.brightness.toString(), {
-      retain: true
-    });
-    await this.#mqtt.publish(device.topics.temperature, tempPercentToMireds(device.device.temperature).toString(), {
-      retain: true
-    });
+    typeof device.device.brightness === 'number' &&
+      await this.#mqtt.publish(device.topics.brightness, device.device.brightness.toString(), {
+        retain: true
+      });
+    typeof device.device.temperature === 'number' &&
+      await this.#mqtt.publish(device.topics.temperature, tempPercentToMireds(device.device.temperature).toString(), {
+        retain: true
+      });
   }
 
   /**
    * Send discovery message to Home Assistant via the MQTT broker
    *
    * @returns {Promise<void>} Completion
-   * @private
    */
   async #sendDiscovery() {
     const discoveryTopicBase = 'homeassistant/light';
@@ -233,7 +230,7 @@ module.exports = class MQTTManager {
         ic: 'mdi:lamp',
         max_mirs: MAX_MIREDS,
         min_mirs: MIN_MIREDS,
-        name: device.device.name,
+        name: null, // Use device name
         stat_t: device.topics.on,
         uniq_id: 'target-connected-' + device.device.id
       }), {

@@ -53,9 +53,9 @@ const Characteristics = {
  */
 /**
  * @typedef {Object} State
- * @prop {boolean} on Whether the light is on
- * @prop {number} brightness The brightness of the light
- * @prop {number} temperature The color temperature of the light
+ * @prop {boolean} [on] Whether the light is on
+ * @prop {number} [brightness] The brightness of the light
+ * @prop {number} [temperature] The color temperature of the light
  */
 /**
  * @typedef {(T) => void} SubscribedCallback
@@ -77,9 +77,9 @@ module.exports = class Device {
   #requestedDisconnect;
   /** @type {Subscriptions} */
   #subscriptions;
-  /** @type {Function & { retriesRemaining: number }} */
+  /** @type {(Function & { retriesRemaining: number }) | undefined} */
   #op;
-  /** @type {CharacteristicsSet} */
+  /** @type {CharacteristicsSet | undefined} */
   #characteristics;
   /** @type {string} */
   #name;
@@ -91,9 +91,9 @@ module.exports = class Device {
   constructor(peripheral) {
     this.#peripheral = peripheral;
     this.#state = {
-      on: null,
-      brightness: null,
-      temperature: null
+      on: void 0,
+      brightness: void 0,
+      temperature: void 0
     };
     this.#requestedDisconnect = false;
 
@@ -126,7 +126,6 @@ module.exports = class Device {
    * Connect to the peripheral, ensuring that we only have one active connection at a time
    *
    * @returns {Promise<void>} Promise for completion of connection
-   * @private
    */
   async #connect() {
     if (this.#peripheral.state === 'connected') return;
@@ -143,7 +142,7 @@ module.exports = class Device {
         console.log(`Incomplete operation found, retrying (${--this.#op.retriesRemaining} attempts remaining)`);
         this.#op();
         if (this.#op.retriesRemaining <= 0) {
-          this.#op = null;
+          this.#op = void 0;
         }
       }
     });
@@ -183,16 +182,17 @@ module.exports = class Device {
   async disconnect() {
     if (this.#peripheral.state === 'disconnected') return;
     this.#requestedDisconnect = true;
-    this.#characteristics = null;
+    this.#characteristics = void 0;
     return this.#peripheral.disconnectAsync();
   }
 
   /**
    * Subscribe to peripheral state updates
-   *
-   * @private
    */
   async #subscribeToCharacteristics() {
+    if (!this.#characteristics) {
+      throw new Error('Cannot subscribe to characteristics before they are discovered');
+    }
     for (const ci of Object.values(Characteristics)) {
       /** @type {Characteristic} */
       const ch = this.#characteristics[ci.name];
@@ -260,14 +260,13 @@ module.exports = class Device {
    * @param {Operation<T>} op Operation to run
    * @returns {Promise<T>} Result of the operation
    * @template T type of operation return value
-   * @private
    */
   async #runOperation(op) {
     const operation = () => new Promise((res, rej) => {
       op()
-        .then(() => {
-          this.#op = null;
-          res();
+        .then((result) => {
+          this.#op = void 0;
+          res(result);
         })
         .catch(rej);
     });
@@ -301,7 +300,6 @@ module.exports = class Device {
    * Discover characteristics of a peripheral
    *
    * @returns {Promise<CharacteristicsSet>} Set of Characteristic objects loaded from the device
-   * @private
    */
   async #discoverCharacteristics() {
     const res = await this.#peripheral.discoverSomeServicesAndCharacteristicsAsync([
@@ -327,11 +325,11 @@ module.exports = class Device {
 
   /**
    * Update state from a connected peripheral
-   *
-   * @private
    */
   async #updateState() {
     this.#name = this.#peripheral.advertisement.localName;
+    if (!this.#characteristics)
+      return;
     console.log(`Updating state for '${this.#name}' (ID: ${this.#peripheral.id})`);
     await this.#updateCharacteristicState(this.#characteristics.on, 'on', true);
     await this.#updateCharacteristicState(this.#characteristics.brightness, 'brightness');
@@ -345,7 +343,6 @@ module.exports = class Device {
    * @param {Characteristic} characteristic Characteristic to update from
    * @param {string} name Name of the characteristic (key in this.state)
    * @param {boolean} [isBool] Whether the value should be treated as a boolean, default false
-   * @private
    */
   async #updateCharacteristicState(characteristic, name, isBool = false) {
     await wait(500);
@@ -360,13 +357,15 @@ module.exports = class Device {
    * @param {Buffer} value Value to set
    * @param {boolean} [withoutResponse] Whether to write without expecting a response
    * @returns {Promise<void>} Promise for completion
-   * @private
    */
   async #setCharacteristic(characteristicInfo, value, withoutResponse = false) {
     console.log(`Setting characteristic '${characteristicInfo.name}' for '${this.#name}' (ID: ${this.#peripheral.id})`);
     await this.#connect();
     try {
       await this.#runOperation(async () => {
+        if (!this.#characteristics) {
+          throw new Error('Cannot set characteristic before characteristics are discovered');
+        }
         const ch = this.#characteristics[characteristicInfo.name];
         await ch.writeAsync(value, withoutResponse);
         if (characteristicInfo.name === 'on' && this.#state.brightness === 0) {
@@ -409,7 +408,7 @@ module.exports = class Device {
    * @public
    */
   get on() {
-    return this.#state.on;
+    return !!this.#state.on;
   }
 
   /**
@@ -427,7 +426,7 @@ module.exports = class Device {
    * Get the brightness of the light. Values range from 1 (dimmest) to 100 (brightest).
    * Uses value from last refresh.
    *
-   * @returns {number} Brightness value
+   * @returns {number | undefined} Brightness value
    * @public
    */
   get brightness() {
@@ -452,7 +451,7 @@ module.exports = class Device {
    * Get the color temperature of the light. Values range from 1 (warmest) to 100 (coolest).
    * Uses value from last refresh.
    *
-   * @returns {number} Color temperature value
+   * @returns {number | undefined} Color temperature value
    * @public
    */
   get temperature() {
@@ -478,7 +477,6 @@ module.exports = class Device {
    *
    * @param {Characteristic} characteristic Characteristic to read
    * @returns {Promise<number>} Characteristic value as a unit8
-   * @private
    * @static
    */
   static async #readAsUInt8(characteristic) {
